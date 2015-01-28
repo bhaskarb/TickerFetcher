@@ -16,7 +16,9 @@ def convertStrToIn(numstr):
                 power = power + 1;
         elif c == '.':
             power = 0
-    return (num*sign)/float(pow(10, power))
+    if power > 0:
+        return (num*sign)/float(pow(10, power))
+    return (num*sign)
 
 def findPrice(fname, data):
     ticker = fname.replace(".html", "").replace("valid/","")
@@ -32,14 +34,34 @@ def findPrice(fname, data):
         return 0
     return convertStrToIn(data[db +1 :de]) 
 
+def findLatestDate(fname, data):
+    sstart = data.find("Period Ending")
+    if sstart == -1:
+        return 0
+    bstart = data.find('<b>', sstart)
+    if bstart == -1:
+        return 0
+    cstart = data.find(',', bstart)
+    if cstart == -1:
+        return 0;
+    bend = data.find('</b>', bstart)
+    if bend == -1:
+        return 0
+    date = data[cstart + 2: bend]
+    logging.debug(date)
+    return convertStrToIn(data[cstart + 2:bend])
+
 def analyzeFile(fname):
     with open(fname, 'rb') as dfile:
         data = dfile.read();
         price = findPrice(fname, data)
+        date = findLatestDate(fname, data)
+        if date < 2013.0:
+            return None
         teqloc = data.find("Total Stockholder Equity")
         endloc = data.find("/TABLE")
         if teqloc == -1 or endloc == -1:
-            return
+            return None
         numstr = data[teqloc:endloc]
         sstart = numstr.find("<strong>", 0) 
         send = numstr.find("</strong>", sstart)
@@ -83,31 +105,39 @@ def writeAnalysisHtml(ticklist):
         wfile.write("<td>Current Equity</td>\n")
         wfile.write("<td>Current Asset</td>\n")
         wfile.write("<td>Price</td>\n")
-        wfile.write("</tr></thead><tbody>")
+        wfile.write("</tr></thead>\n<tbody>")
         for tick in ticklist:
             ticker = tick[0].replace("valid/", "").replace(".html","")
             wfile.write('<tr>')
-            wfile.write('<td><a href="http://finance.yahoo.com/q?s=%s">%s</a></td>' %(ticker, tick[0]))
+            wfile.write('<td><a href="http://finance.yahoo.com/q?s=%s">%s</a></td>' %(ticker, ticker))
             wfile.write('<td>%d</td><td>%d</td>' %(tick[1], tick[2]))
             wfile.write('<td>%d</td><td>%d</td><td>%5f</td>' %(tick[3], tick[4], tick[5]))
-            wfile.write('</tr>')
+            wfile.write('</tr>\n')
         wfile.write("</tbody></table></body>")
 
 def cleanTicklist(ticklist):
     viewlist = []
     for tick in ticklist:
-        if(tick[3]>0 and tick[5]> 0 and tick[5] < 5):
+        if(tick[3]>0 and tick[5]> 0.1 and tick[5] < 1):
             viewlist.append(tick)
+    viewlist.sort(key = lambda eq: eq[5])
     return viewlist 
 
 if __name__ == "__main__":
+    logger = logging.getLogger("analyzer_ticker")
+    logger.setLevel(logging.INFO)
+    fh = logging.FileHandler('analyzer.log')
+    logger.addHandler(fh)
+
     dirlist = os.listdir("valid")
 #    dirlist = ['AABB.html', 'AACS.html']
     ticklist = []
     for fname in dirlist:
         loc = os.path.join("valid", fname)
         tup = analyzeFile(loc)
-        ticklist.append(tup)
+        if(tup != None):
+            logging.debug(tup)
+            ticklist.append(tup)
     ticklist.sort(key = lambda eq: eq[3], reverse=True)
     viewlist = cleanTicklist(ticklist)
     writeAnalysisHtml(viewlist)
